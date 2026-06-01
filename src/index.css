@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    font-family: Pretendard, system-ui, 'Apple SD Gothic Neo', 'Noto Sans KR',
+      sans-serif;
+    color: #2a2520;
+    background-color: #faf8f4;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100svh;
+    background-color: #faf8f4;
+    color: #2a2520;
+  }
+
+  #root {
+    margin: 0 auto;
+    width: 100%;
+    max-width: 390px;
+    min-height: 100svh;
+    border-left: 1px solid #ede7dd;
+    border-right: 1px solid #ede7dd;
+    background-color: #faf8f4;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+}
