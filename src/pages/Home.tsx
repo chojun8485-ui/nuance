@@ -11,7 +11,12 @@ import {
   retouchDotClass,
   sortByRetouchUrgency,
 } from '../lib/clientUtils'
-import { getClients, getCurrentUser, getRecentTreatments } from '../lib/supabase'
+import {
+  getClients,
+  getCurrentUser,
+  getRecentTreatments,
+  supabase,
+} from '../lib/supabase'
 import type { Client, TreatmentWithClient } from '../types/client'
 import MessagePicker from '../components/MessagePicker'
 import MessageTemplatesPage from '../components/MessageTemplatesPage'
@@ -46,6 +51,12 @@ export default function Home() {
     loadHome()
   }, [loadHome])
 
+  const handleLogout = async () => {
+    if (!window.confirm('로그아웃 할까요?')) return
+    await supabase.auth.signOut()
+    window.location.href = '/'
+  }
+
   const retouchClients = useMemo(
     () => clients.filter(isRetouchNeeded).sort(sortByRetouchUrgency),
     [clients],
@@ -54,9 +65,18 @@ export default function Home() {
   return (
     <div className="pb-2">
       <header className="space-y-4 pb-2">
-        <p className="text-[10px] font-medium uppercase tracking-label text-subtext/90">
-          {formatTodayKo()}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-medium uppercase tracking-label text-subtext/90">
+            {formatTodayKo()}
+          </p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="rounded-full border border-border px-3 py-1 text-[11px] text-subtext transition-colors active:bg-[#FAF8F5]"
+          >
+            로그아웃
+          </button>
+        </div>
         <div className="space-y-2.5">
           <h1 className="font-display text-[2.75rem] leading-[1.05] tracking-tight text-primary">
             Nuance
@@ -109,7 +129,10 @@ export default function Home() {
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         defaultCategory="retouch"
-        onManage={() => { setPickerOpen(false); setManageOpen(true) }}
+        onManage={() => {
+          setPickerOpen(false)
+          setManageOpen(true)
+        }}
       />
       <MessageTemplatesPage
         open={manageOpen}

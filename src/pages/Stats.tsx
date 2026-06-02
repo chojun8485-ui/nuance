@@ -14,7 +14,10 @@ export default function Stats() {
 
   useEffect(() => {
     Promise.all([fetchMonthlyStats(), fetchRetouchClients()])
-      .then(([s, r]) => { setStats(s); setRetouch(r) })
+      .then(([s, r]) => {
+        setStats(s)
+        setRetouch(r)
+      })
       .catch((e) => console.error(e))
       .finally(() => setLoading(false))
   }, [])
@@ -24,12 +27,18 @@ export default function Stats() {
   return (
     <div className="space-y-7 px-5 py-6">
       <div>
-        <h1 className="text-3xl" style={{ fontFamily: "'DM Serif Display', serif", color: TEXT }}>통계</h1>
-        <p className="mt-1 text-sm" style={{ color: '#7A7164' }}>이번 달 작업 흐름을 한눈에 확인하세요.</p>
+        <h1 className="text-3xl" style={{ fontFamily: "'DM Serif Display', serif", color: TEXT }}>
+          통계
+        </h1>
+        <p className="mt-1 text-sm" style={{ color: '#7A7164' }}>
+          이번 달 작업 흐름과 정산을 한눈에 확인하세요.
+        </p>
       </div>
 
       {loading ? (
-        <p className="py-10 text-center text-sm" style={{ color: MUTED }}>불러오는 중…</p>
+        <p className="py-10 text-center text-sm" style={{ color: MUTED }}>
+          불러오는 중…
+        </p>
       ) : (
         <>
           <div className="rounded-2xl border bg-white p-5" style={{ borderColor: BORDER }}>
@@ -76,11 +85,121 @@ export default function Stats() {
             )}
           </div>
 
-          <p className="pt-2 text-center text-xs" style={{ color: '#B5AD9E' }}>
-            매출 흐름은 시술 가격을 기록하면 표시할 수 있어요
-          </p>
+          <IncentiveCalculator />
         </>
       )}
+    </div>
+  )
+}
+
+function IncentiveCalculator() {
+  const [amountRaw, setAmountRaw] = useState('')
+  const [cardFee, setCardFee] = useState(
+    () => localStorage.getItem('nuance_card_fee') ?? '2.5',
+  )
+  const [incentive, setIncentive] = useState(
+    () => localStorage.getItem('nuance_incentive') ?? '35',
+  )
+
+  useEffect(() => {
+    localStorage.setItem('nuance_card_fee', cardFee)
+  }, [cardFee])
+  useEffect(() => {
+    localStorage.setItem('nuance_incentive', incentive)
+  }, [incentive])
+
+  const amt = Number(amountRaw) || 0
+  const feeRate = Number(cardFee) || 0
+  const incRate = Number(incentive) || 0
+
+  const feeAmount = Math.round((amt * feeRate) / 100)
+  const netSales = amt - feeAmount
+  const designerCut = Math.round((netSales * incRate) / 100)
+  const ownerCut = netSales - designerCut
+
+  const won = (n: number) => `${n.toLocaleString('ko-KR')}원`
+
+  return (
+    <div>
+      <h2 className="mb-3 text-lg font-semibold" style={{ color: TEXT }}>
+        인센티브 계산기
+      </h2>
+
+      <div className="space-y-4 rounded-2xl border bg-white p-5" style={{ borderColor: BORDER }}>
+        {/* 시술 금액 */}
+        <div>
+          <label className="mb-1.5 block text-xs" style={{ color: '#7A7164' }}>시술 금액</label>
+          <div className="relative">
+            <input
+              inputMode="numeric"
+              value={amt ? amt.toLocaleString('ko-KR') : ''}
+              onChange={(e) => setAmountRaw(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder="0"
+              className="w-full rounded-xl border bg-[#FAF8F4] px-4 py-3 pr-8 text-right text-base font-medium outline-none"
+              style={{ borderColor: BORDER, color: TEXT }}
+            />
+            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: MUTED }}>원</span>
+          </div>
+        </div>
+
+        {/* 수수료율 / 인센티브율 */}
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="mb-1.5 block text-xs" style={{ color: '#7A7164' }}>카드 수수료율</label>
+            <div className="relative">
+              <input
+                inputMode="decimal"
+                value={cardFee}
+                onChange={(e) => setCardFee(e.target.value.replace(/[^0-9.]/g, ''))}
+                className="w-full rounded-xl border bg-[#FAF8F4] px-4 py-3 pr-8 text-right text-base outline-none"
+                style={{ borderColor: BORDER, color: TEXT }}
+              />
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: MUTED }}>%</span>
+            </div>
+          </div>
+          <div className="flex-1">
+            <label className="mb-1.5 block text-xs" style={{ color: '#7A7164' }}>인센티브율</label>
+            <div className="relative">
+              <input
+                inputMode="decimal"
+                value={incentive}
+                onChange={(e) => setIncentive(e.target.value.replace(/[^0-9.]/g, ''))}
+                className="w-full rounded-xl border bg-[#FAF8F4] px-4 py-3 pr-8 text-right text-base outline-none"
+                style={{ borderColor: BORDER, color: TEXT }}
+              />
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: MUTED }}>%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 결과 */}
+        <div className="space-y-2 border-t pt-4" style={{ borderColor: BORDER }}>
+          <Row label="카드 수수료" value={`- ${won(feeAmount)}`} muted />
+          <Row label="실매출 (수수료 뗀 금액)" value={won(netSales)} muted />
+
+          <div className="my-2 rounded-xl px-4 py-3" style={{ background: '#F5EFE6' }}>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium" style={{ color: TEXT }}>디자이너 실수령</span>
+              <span className="text-xl font-bold" style={{ color: ACCENT }}>{won(designerCut)}</span>
+            </div>
+          </div>
+
+          <Row label="원장 몫" value={won(ownerCut)} />
+        </div>
+
+        <p className="text-center text-xs" style={{ color: '#B5AD9E' }}>
+          수수료율·인센티브율은 자동 저장돼요
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-sm" style={{ color: muted ? '#7A7164' : TEXT }}>{label}</span>
+      <span className="text-sm font-medium" style={{ color: muted ? MUTED : TEXT }}>{value}</span>
     </div>
   )
 }
