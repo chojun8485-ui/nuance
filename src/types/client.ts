@@ -68,6 +68,6 @@ export type ClientInsert = {
   personality_notes?: string | null
 }
 
-export type ClientUpdate = Partial
+export type ClientUpdate = Partial<
   Pick<Client, 'name' | 'phone' | 'instagram' | 'personality_notes'>
 >
