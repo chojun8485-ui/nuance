@@ -7,10 +7,11 @@ import {
   getDaysSinceLastVisit,
   getRetouchStatus,
   matchesFilter,
+  parseStringArray,
   retouchDotClass,
   type ClientFilter,
 } from '../lib/clientUtils'
-import { getClients, getCurrentUser } from '../lib/supabase'
+import { getClients, getCurrentUser, supabase } from '../lib/supabase'
 import type { Client } from '../types/client'
 
 const filters: { key: ClientFilter; label: string }[] = [
@@ -22,6 +23,7 @@ const filters: { key: ClientFilter; label: string }[] = [
 
 export default function Clients() {
   const [clients, setClients] = useState<Client[]>([])
+  const [searchIndex, setSearchIndex] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<ClientFilter>('all')
@@ -36,6 +38,31 @@ export default function Clients() {
       setDesignerId(user.id)
       const data = await getClients(user.id)
       setClients(data)
+
+      // 시술 기록에서 컬러태그·메뉴를 모아 검색 색인 만들기
+      const { data: treatmentRows } = await supabase
+        .from('treatments')
+        .select('client_id, menu, color_tags, clients!inner(designer_id)')
+        .eq('clients.designer_id', user.id)
+        .not('client_id', 'is', null)
+
+      const index: Record<string, string> = {}
+      for (const row of treatmentRows ?? []) {
+        const r = row as {
+          client_id: string | null
+          menu: string[] | string | null
+          color_tags: string[] | string | null
+        }
+        if (!r.client_id) continue
+        const terms = [
+          ...parseStringArray(r.menu),
+          ...parseStringArray(r.color_tags),
+        ]
+          .join(' ')
+          .toLowerCase()
+        index[r.client_id] = `${index[r.client_id] ?? ''} ${terms}`
+      }
+      setSearchIndex(index)
     } catch {
       setClients([])
     } finally {
@@ -55,10 +82,11 @@ export default function Clients() {
       return (
         client.name.toLowerCase().includes(query) ||
         (client.phone?.includes(query) ?? false) ||
-        (client.instagram?.toLowerCase().includes(query) ?? false)
+        (client.instagram?.toLowerCase().includes(query) ?? false) ||
+        (searchIndex[client.id]?.includes(query) ?? false)
       )
     })
-  }, [clients, filter, search])
+  }, [clients, filter, search, searchIndex])
 
   const openAddModal = () => setModalOpen(true)
 
@@ -86,7 +114,7 @@ export default function Clients() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="검색"
+          placeholder="이름 · 컬러 · 메뉴 검색"
           className="w-full rounded-xl border border-border bg-cream py-3 pl-10 pr-4 text-sm text-text outline-none transition-colors placeholder:text-subtext/60 focus:border-primary focus:bg-surface"
         />
       </div>

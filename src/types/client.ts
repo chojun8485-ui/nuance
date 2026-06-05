@@ -21,6 +21,7 @@ export type Formula = {
 export type StainSection = {
   label: string
   level: number | null
+  width?: number
 }
 
 export type Treatment = {
@@ -33,6 +34,7 @@ export type Treatment = {
   stain_sections: StainSection[] | null
   notes: string | null
   photo_urls: string[] | null
+  price: number | null
   treated_at: string | null
   created_at: string
 }
@@ -46,6 +48,7 @@ export type TreatmentInsert = {
   color_tags?: string[]
   notes?: string | null
   photo_urls?: string[]
+  price?: number | null
   treated_at?: string | null
 }
 
@@ -65,6 +68,6 @@ export type ClientInsert = {
   personality_notes?: string | null
 }
 
-export type ClientUpdate = Partial<
+export type ClientUpdate = Partial
   Pick<Client, 'name' | 'phone' | 'instagram' | 'personality_notes'>
 >

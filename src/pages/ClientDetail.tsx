@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Copy, Trash2 } from 'lucide-react'
+import { ArrowLeft, Copy, Pencil, Trash2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import {
   formatDateKo,
@@ -18,6 +18,7 @@ import {
 import type { Client, Formula, StainSection, Treatment } from '../types/client'
 import MessagePicker from '../components/MessagePicker'
 import MessageTemplatesPage from '../components/MessageTemplatesPage'
+import TreatmentEditModal from '../components/TreatmentEditModal'
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>()
@@ -27,6 +28,9 @@ export default function ClientDetail() {
   const [personalityNotes, setPersonalityNotes] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
+  const [editingTreatment, setEditingTreatment] = useState<Treatment | null>(
+    null,
+  )
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadClient = useCallback(async () => {
@@ -152,7 +156,7 @@ export default function ClientDetail() {
         className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-[#FAF8F5] px-4 py-3.5 text-sm font-medium text-text transition-colors active:bg-border/40"
       >
         <Copy size={18} className="text-primary" />
-        리터치 메시지 복사
+        멘트 복사
       </button>
 
       <div className="space-y-3">
@@ -168,6 +172,7 @@ export default function ClientDetail() {
                 key={treatment.id}
                 treatment={treatment}
                 onDeleted={loadClient}
+                onEdit={() => setEditingTreatment(treatment)}
               />
             ))}
           </ul>
@@ -177,7 +182,6 @@ export default function ClientDetail() {
       <MessagePicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        
         onManage={() => {
           setPickerOpen(false)
           setManageOpen(true)
@@ -187,21 +191,46 @@ export default function ClientDetail() {
         open={manageOpen}
         onClose={() => setManageOpen(false)}
       />
+      <TreatmentEditModal
+        treatment={editingTreatment}
+        open={editingTreatment !== null}
+        onClose={() => setEditingTreatment(null)}
+        onSaved={loadClient}
+      />
     </section>
   )
 }
 
-// ── 얼룩 구간 색상 (레벨 1=가장 어두움 → 19=가장 밝음) ──
+// ── 레벨 → 색상 ─────────────────────────────────────────────
 function stainLevelColor(level: number | null | undefined): string {
   if (level == null) return '#ECE5D8'
-  const t = Math.min(Math.max((level - 1) / 18, 0), 1)
-  const lerp = (a: number, b: number) => Math.round(a + (b - a) * t)
-  return `rgb(${lerp(0x24, 0xfa)}, ${lerp(0x14, 0xf3)}, ${lerp(0x05, 0xe6)})`
+  const t = Math.max(0, Math.min(1, (level - 1) / 18))
+  const stops: [number, number, number, number][] = [
+    [0, 26, 26, 26],
+    [0.35, 75, 52, 42],
+    [0.5, 160, 105, 58],
+    [0.65, 195, 155, 105],
+    [0.82, 225, 210, 175],
+    [1, 253, 252, 245],
+  ]
+  let i = 0
+  while (i < stops.length - 2 && t > stops[i + 1][0]) i++
+  const [, r0, g0, b0] = stops[i]
+  const [t1, r1, g1, b1] = stops[i + 1]
+  const [t0] = stops[i]
+  const u = t1 === t0 ? 0 : (t - t0) / (t1 - t0)
+  return `rgb(${Math.round(r0 + (r1 - r0) * u)}, ${Math.round(g0 + (g1 - g0) * u)}, ${Math.round(b0 + (b1 - b0) * u)})`
 }
 
-const HAIR_W = 300
-const HAIR_TOP = 18
-const HAIR_H = 52
+const STRAND_LEFT = 28
+const STRAND_BODY_RIGHT = 338
+const STRAND_TIP_RIGHT = 392
+const STRAND_BODY_WIDTH = STRAND_BODY_RIGHT - STRAND_LEFT
+const STRAND_CENTER_Y = 44
+const STRAND_BODY_TOP = 18
+const STRAND_VIEW_HEIGHT = 70
+
+const HAIR_PATH = `M 14 ${STRAND_BODY_TOP} L ${STRAND_BODY_RIGHT - 44} ${STRAND_BODY_TOP} Q ${STRAND_TIP_RIGHT - 2} ${STRAND_CENTER_Y} ${STRAND_BODY_RIGHT - 44} ${STRAND_VIEW_HEIGHT - 2} L 14 ${STRAND_VIEW_HEIGHT - 2} Q 2 ${STRAND_VIEW_HEIGHT - 2} 2 ${STRAND_CENTER_Y} Q 2 ${STRAND_BODY_TOP} 14 ${STRAND_BODY_TOP} Z`
 
 function StainDiagram({
   sections,
@@ -213,55 +242,72 @@ function StainDiagram({
   const n = sections.length
   if (n === 0) return null
 
-  const segW = HAIR_W / n
+  const widths = sections.map((s) => s.width ?? 1)
+  const total = widths.reduce((a, b) => a + b, 0) || 1
   const clipId = `stain-clip-${uid}`
-  const bottom = HAIR_TOP + HAIR_H
-  const midY = HAIR_TOP + HAIR_H / 2
-  const tipX = HAIR_W - 2
-  const taperX = HAIR_W - 44
+  const bottom = STRAND_VIEW_HEIGHT - 2
+  const midY = STRAND_CENTER_Y
+  const taperX = STRAND_BODY_RIGHT - 44
 
-  const hairPath = `M 14 ${HAIR_TOP} L ${taperX} ${HAIR_TOP} Q ${tipX} ${midY} ${taperX} ${bottom} L 14 ${bottom} Q 2 ${bottom} 2 ${midY} Q 2 ${HAIR_TOP} 14 ${HAIR_TOP} Z`
+  type Bound = { x: number; bodyEndX: number; fillEndX: number; fillW: number }
+  const bounds: Bound[] = []
+  let acc = 0
+  for (let i = 0; i < n; i++) {
+    const startFrac = acc / total
+    acc += widths[i]
+    const endFrac = acc / total
+    // 첫 구간은 왼쪽 끝까지 채워서 흰 여백 제거
+    const x = i === 0 ? 0 : STRAND_LEFT + startFrac * STRAND_BODY_WIDTH
+    const bodyEndX = STRAND_LEFT + endFrac * STRAND_BODY_WIDTH
+    const isLast = i === n - 1
+    const fillEndX = isLast ? STRAND_TIP_RIGHT - 2 : bodyEndX
+    bounds.push({ x, bodyEndX, fillEndX, fillW: fillEndX - x })
+  }
 
   return (
-    <svg viewBox={`0 0 ${HAIR_W} ${bottom + 2}`} className="w-full" role="img">
+    <svg
+      viewBox={`0 0 ${STRAND_TIP_RIGHT} ${STRAND_VIEW_HEIGHT}`}
+      className="w-full"
+      role="img"
+    >
       <defs>
         <clipPath id={clipId}>
-          <path d={hairPath} />
+          <path d={HAIR_PATH} />
         </clipPath>
       </defs>
 
-      {sections.map((s, i) => (
+      {bounds.map((b, i) => (
         <text
           key={`lbl-${i}`}
-          x={Math.min((i + 0.5) * segW, taperX - 6)}
+          x={Math.min((b.x + b.bodyEndX) / 2, taperX - 6)}
           y={12}
           textAnchor="middle"
           fontSize="10.5"
           fill="#9A9183"
         >
-          {s.label}
+          {sections[i].label}
         </text>
       ))}
 
-      <path d={hairPath} fill="#ECE5D8" />
+      <path d={HAIR_PATH} fill="#ECE5D8" />
 
       <g clipPath={`url(#${clipId})`}>
-        {sections.map((s, i) => (
+        {bounds.map((b, i) => (
           <rect
             key={`seg-${i}`}
-            x={i * segW}
-            y={HAIR_TOP}
-            width={segW + 0.5}
-            height={HAIR_H}
-            fill={stainLevelColor(s.level)}
+            x={b.x}
+            y={0}
+            width={b.fillW + 0.5}
+            height={STRAND_VIEW_HEIGHT}
+            fill={stainLevelColor(sections[i].level)}
           />
         ))}
-        {sections.slice(0, -1).map((_, i) => (
+        {bounds.slice(1).map((b, i) => (
           <line
             key={`div-${i}`}
-            x1={(i + 1) * segW}
-            y1={HAIR_TOP}
-            x2={(i + 1) * segW}
+            x1={b.x}
+            y1={STRAND_BODY_TOP}
+            x2={b.x}
             y2={bottom}
             stroke="rgba(255,255,255,0.45)"
             strokeWidth="1.5"
@@ -269,12 +315,12 @@ function StainDiagram({
         ))}
       </g>
 
-      <path d={hairPath} fill="none" stroke="#C9BCA4" strokeWidth="1.5" />
+      <path d={HAIR_PATH} fill="none" stroke="#C9BCA4" strokeWidth="1.5" />
 
-      {sections.map((s, i) => {
-        if (s.level == null) return null
-        const cx = Math.min((i + 0.5) * segW, taperX - 8)
-        const light = s.level >= 10
+      {bounds.map((b, i) => {
+        const level = sections[i].level
+        if (level == null) return null
+        const cx = Math.min((b.x + b.bodyEndX) / 2, taperX - 8)
         return (
           <text
             key={`lv-${i}`}
@@ -283,9 +329,9 @@ function StainDiagram({
             textAnchor="middle"
             fontSize="11"
             fontWeight="700"
-            fill={light ? '#5B4636' : '#F6ECD9'}
+            fill={level >= 10 ? '#5B4636' : '#F6ECD9'}
           >
-            {s.level}lv
+            {level}lv
           </text>
         )
       })}
@@ -296,9 +342,11 @@ function StainDiagram({
 function TreatmentCard({
   treatment,
   onDeleted,
+  onEdit,
 }: {
   treatment: Treatment
   onDeleted: () => void
+  onEdit: () => void
 }) {
   const [deleting, setDeleting] = useState(false)
   const dateStr = treatment.treated_at ?? treatment.created_at
@@ -322,16 +370,26 @@ function TreatmentCard({
   }
 
   return (
-    <li className="relative space-y-3 rounded-xl border border-border px-4 py-3 pr-10">
-      <button
-        type="button"
-        onClick={handleDelete}
-        disabled={deleting}
-        className="absolute right-2 top-2 rounded-full p-1.5 text-subtext/70 transition-colors hover:text-subtext active:bg-[#FAF8F5] disabled:opacity-50"
-        aria-label="시술 기록 삭제"
-      >
-        <Trash2 size={15} />
-      </button>
+    <li className="relative space-y-3 rounded-xl border border-border px-4 py-3 pr-20">
+      <div className="absolute right-2 top-2 flex gap-1">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="rounded-full p-1.5 text-subtext/70 transition-colors hover:text-primary active:bg-[#FAF8F5]"
+          aria-label="시술 기록 수정"
+        >
+          <Pencil size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          className="rounded-full p-1.5 text-subtext/70 transition-colors hover:text-subtext active:bg-[#FAF8F5] disabled:opacity-50"
+          aria-label="시술 기록 삭제"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">

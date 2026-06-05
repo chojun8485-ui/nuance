@@ -8,6 +8,9 @@ import {
   uploadPhoto,
 } from '../lib/supabase'
 import type { Client, Formula, StainSection } from '../types/client'
+import HairStrandVisualizer, {
+  defaultStainSections,
+} from '../components/HairStrandVisualizer'
 
 const TREATMENT_MENUS = [
   '염색',
@@ -33,50 +36,6 @@ const DEVELOPER_PRESETS = [
   '12%',
 ] as const
 
-const DEFAULT_SECTION_LABELS = ['A1(뿌리)', 'A', 'B', 'C'] as const
-const MAX_STAIN_SECTIONS = 6
-
-const STRAND_LEFT = 28
-const STRAND_BODY_RIGHT = 338
-const STRAND_TIP_RIGHT = 392
-const STRAND_BODY_WIDTH = STRAND_BODY_RIGHT - STRAND_LEFT
-const STRAND_CENTER_Y = 44
-const STRAND_BODY_TOP = 12
-const STRAND_BODY_BOTTOM = 76
-const STRAND_VIEW_HEIGHT = 88
-
-/** Smooth lozenge: rounded root, flat body, pointed tip. */
-const HAIR_STRAND_PATH = `M ${STRAND_LEFT} ${STRAND_CENTER_Y} C ${STRAND_LEFT} ${STRAND_BODY_TOP}, ${STRAND_LEFT} ${STRAND_BODY_TOP}, 72 ${STRAND_BODY_TOP} L ${STRAND_BODY_RIGHT} ${STRAND_BODY_TOP} L ${STRAND_TIP_RIGHT} ${STRAND_CENTER_Y} L ${STRAND_BODY_RIGHT} ${STRAND_BODY_BOTTOM} C 72 ${STRAND_BODY_BOTTOM}, ${STRAND_LEFT} ${STRAND_BODY_BOTTOM}, ${STRAND_LEFT} ${STRAND_CENTER_Y} Z`
-
-function segmentDividerX(index: number, sectionCount: number): number {
-  return STRAND_LEFT + index * (STRAND_BODY_WIDTH / sectionCount)
-}
-
-function segmentFillBounds(
-  index: number,
-  sectionCount: number,
-): { x: number; width: number } {
-  const x = segmentDividerX(index, sectionCount)
-  const isLast = index === sectionCount - 1
-  const width = isLast
-    ? STRAND_TIP_RIGHT - x
-    : STRAND_BODY_WIDTH / sectionCount
-  return { x, width }
-}
-
-/** Label center: body-only dividers; last segment excludes the tip wedge. */
-function segmentLabelCenter(
-  index: number,
-  sectionCount: number,
-): { x: number; y: number } {
-  const leftX = segmentDividerX(index, sectionCount)
-  const rightX =
-    index === sectionCount - 1
-      ? STRAND_BODY_RIGHT
-      : segmentDividerX(index + 1, sectionCount)
-  return { x: (leftX + rightX) / 2, y: STRAND_CENTER_Y }
-}
-
 type PhotoPreview = {
   id: string
   file: File
@@ -85,45 +44,6 @@ type PhotoPreview = {
 
 function emptyFormula(): Formula {
   return { title: '', dye: '', developer: '', ratio: '' }
-}
-
-function defaultStainSections(count = 4): StainSection[] {
-  return Array.from({ length: count }, (_, i) => ({
-    label: DEFAULT_SECTION_LABELS[i] ?? `구간${i + 1}`,
-    level: null,
-  }))
-}
-
-function levelToColor(level: number): string {
-  const t = Math.max(0, Math.min(1, (level - 1) / 18))
-  const stops: [number, number, number, number][] = [
-    [0, 26, 26, 26],
-    [0.35, 75, 52, 42],
-    [0.5, 160, 105, 58],
-    [0.65, 195, 155, 105],
-    [0.82, 225, 210, 175],
-    [1, 253, 252, 245],
-  ]
-  let i = 0
-  while (i < stops.length - 2 && t > stops[i + 1][0]) i++
-  const [, r0, g0, b0] = stops[i]
-  const [t1, r1, g1, b1] = stops[i + 1]
-  const [t0] = stops[i]
-  const u = t1 === t0 ? 0 : (t - t0) / (t1 - t0)
-  const r = Math.round(r0 + (r1 - r0) * u)
-  const g = Math.round(g0 + (g1 - g0) * u)
-  const b = Math.round(b0 + (b1 - b0) * u)
-  return `rgb(${r}, ${g}, ${b})`
-}
-
-function levelTextColor(level: number): string {
-  return level <= 9 ? '#fdfcf5' : '#1a1a1a'
-}
-
-function levelLabelFilter(level: number): string {
-  return level <= 9
-    ? 'url(#level-text-shadow-dark)'
-    : 'url(#level-text-shadow-light)'
 }
 
 function StepCard({
@@ -291,275 +211,6 @@ function FormulaGroupCard({
   )
 }
 
-function HairStrandVisualizer({
-  sections,
-  onSectionsChange,
-}: {
-  sections: StainSection[]
-  onSectionsChange: (next: StainSection[]) => void
-}) {
-  const [pickerIndex, setPickerIndex] = useState<number | null>(null)
-  const [editingLabelIndex, setEditingLabelIndex] = useState<number | null>(
-    null,
-  )
-
-  const setCount = (count: number) => {
-    const next = Array.from({ length: count }, (_, i) => {
-      if (sections[i]) return sections[i]
-      return {
-        label: DEFAULT_SECTION_LABELS[i] ?? `구간${i + 1}`,
-        level: null,
-      }
-    })
-    onSectionsChange(next)
-    setPickerIndex(null)
-    setEditingLabelIndex(null)
-  }
-
-  const addSection = () => {
-    if (sections.length >= MAX_STAIN_SECTIONS) return
-    onSectionsChange([
-      ...sections,
-      { label: `구간${sections.length + 1}`, level: null },
-    ])
-  }
-
-  const updateSection = (index: number, patch: Partial<StainSection>) => {
-    onSectionsChange(
-      sections.map((s, i) => (i === index ? { ...s, ...patch } : s)),
-    )
-  }
-
-  const selectLevel = (index: number, level: number) => {
-    updateSection(index, { level })
-    const nextIndex = index + 1
-    setPickerIndex(nextIndex < sections.length ? nextIndex : null)
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-subtext">구간 개수</span>
-        {[2, 3, 4].map((n) => (
-          <button
-            key={n}
-            type="button"
-            onClick={() => setCount(n)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-              sections.length === n
-                ? 'bg-primary text-white'
-                : 'border border-border bg-[#FAF8F5] text-subtext'
-            }`}
-          >
-            {n}
-          </button>
-        ))}
-        {sections.length < MAX_STAIN_SECTIONS && (
-          <button
-            type="button"
-            onClick={addSection}
-            className="inline-flex items-center gap-1 rounded-full border border-dashed border-primary/50 px-3 py-1.5 text-xs font-medium text-primary transition-colors active:bg-[#FAF8F5]"
-          >
-            <Plus size={14} />
-            구간 추가
-          </button>
-        )}
-      </div>
-
-      <div
-        className="grid gap-1"
-        style={{
-          gridTemplateColumns: `repeat(${sections.length}, minmax(0, 1fr))`,
-        }}
-      >
-        {sections.map((section, i) =>
-          editingLabelIndex === i ? (
-            <input
-              key={i}
-              type="text"
-              autoFocus
-              value={section.label}
-              onChange={(e) => updateSection(i, { label: e.target.value })}
-              onBlur={() => setEditingLabelIndex(null)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') setEditingLabelIndex(null)
-              }}
-              className="rounded-lg border border-primary bg-background px-1 py-0.5 text-center text-xs text-text outline-none"
-            />
-          ) : (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setEditingLabelIndex(i)}
-              className="truncate rounded-lg px-1 py-0.5 text-center text-xs font-medium text-subtext transition-colors hover:bg-[#FAF8F5] hover:text-text"
-              title="탭하여 이름 변경"
-            >
-              {section.label}
-            </button>
-          ),
-        )}
-      </div>
-
-      <div className="relative">
-        <svg
-          viewBox={`0 0 420 ${STRAND_VIEW_HEIGHT}`}
-          className="w-full"
-          role="img"
-          aria-label="머리카락 얼룩 구간"
-        >
-          <defs>
-            <clipPath id="hair-strand-clip">
-              <path d={HAIR_STRAND_PATH} />
-            </clipPath>
-            <filter
-              id="level-text-shadow-dark"
-              x="-30%"
-              y="-30%"
-              width="160%"
-              height="160%"
-            >
-              <feDropShadow
-                dx="0"
-                dy="0.5"
-                stdDeviation="0.9"
-                floodColor="#1a1a1a"
-                floodOpacity="0.45"
-              />
-            </filter>
-            <filter
-              id="level-text-shadow-light"
-              x="-30%"
-              y="-30%"
-              width="160%"
-              height="160%"
-            >
-              <feDropShadow
-                dx="0"
-                dy="0.5"
-                stdDeviation="0.7"
-                floodColor="#fdfcf5"
-                floodOpacity="0.35"
-              />
-            </filter>
-          </defs>
-
-          <path
-            d={HAIR_STRAND_PATH}
-            fill="#EDE8E0"
-            stroke="#C8A882"
-            strokeWidth="1.5"
-            strokeLinejoin="round"
-          />
-
-          <g clipPath="url(#hair-strand-clip)">
-            {sections.map((section, i) => {
-              const { x, width } = segmentFillBounds(i, sections.length)
-              const fill =
-                section.level !== null
-                  ? levelToColor(section.level)
-                  : '#E8E4DC'
-              const dividerX = segmentDividerX(i, sections.length)
-
-              return (
-                <g key={i}>
-                  <rect
-                    x={x}
-                    y={0}
-                    width={width}
-                    height={STRAND_VIEW_HEIGHT}
-                    fill={fill}
-                    className="cursor-pointer"
-                    onClick={() =>
-                      setPickerIndex(pickerIndex === i ? null : i)
-                    }
-                  />
-                  {i > 0 && (
-                    <line
-                      x1={dividerX}
-                      y1={STRAND_BODY_TOP + 2}
-                      x2={dividerX}
-                      y2={STRAND_BODY_BOTTOM - 2}
-                      stroke="#C8A882"
-                      strokeWidth="0.75"
-                      strokeOpacity="0.45"
-                    />
-                  )}
-                </g>
-              )
-            })}
-
-            {sections.map((section, i) => {
-              if (section.level === null) return null
-              const { x, y } = segmentLabelCenter(i, sections.length)
-              const textFill = levelTextColor(section.level)
-
-              return (
-                <text
-                  key={`label-${i}`}
-                  x={x}
-                  y={y}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fill={textFill}
-                  fontSize="13"
-                  fontWeight="700"
-                  filter={levelLabelFilter(section.level)}
-                  className="pointer-events-none select-none"
-                >
-                  {section.level}
-                </text>
-              )
-            })}
-          </g>
-        </svg>
-
-        {pickerIndex !== null && (
-          <div className="absolute inset-x-0 top-full z-10 mt-2 rounded-xl border border-border bg-background p-3 shadow-lg">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-medium text-text">
-                {sections[pickerIndex]?.label} — 레벨 선택
-              </p>
-              <button
-                type="button"
-                onClick={() => setPickerIndex(null)}
-                className="rounded-full p-0.5 text-subtext"
-                aria-label="레벨 선택 닫기"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
-              {Array.from({ length: 19 }, (_, n) => {
-                const level = n + 1
-                const bg = levelToColor(level)
-                const fg = levelTextColor(level)
-                const selected = sections[pickerIndex]?.level === level
-                return (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() => selectLevel(pickerIndex, level)}
-                    className={`flex h-8 items-center justify-center rounded-lg text-xs font-semibold transition-transform active:scale-95 ${
-                      selected ? 'ring-2 ring-primary ring-offset-1' : ''
-                    }`}
-                    style={{ backgroundColor: bg, color: fg }}
-                  >
-                    {level}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <p className="text-center text-xs text-subtext">
-        구간을 탭하여 레벨(1~19)을 선택하세요 · 1이 가장 어두움
-      </p>
-    </div>
-  )
-}
-
 export default function Record() {
   const [clients, setClients] = useState<Client[]>([])
   const [loadingClients, setLoadingClients] = useState(true)
@@ -567,6 +218,7 @@ export default function Record() {
   const [clientSearch, setClientSearch] = useState('')
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [menus, setMenus] = useState<string[]>([])
+  const [price, setPrice] = useState('')
   const [formulas, setFormulas] = useState<Formula[]>([emptyFormula()])
   const [leaveTime, setLeaveTime] = useState<number | null>(null)
   const [stainSections, setStainSections] = useState<StainSection[]>(() =>
@@ -659,6 +311,7 @@ export default function Record() {
     setSelectedClient(null)
     setClientSearch('')
     setMenus([])
+    setPrice('')
     setFormulas([emptyFormula()])
     setLeaveTime(null)
     setStainSections(defaultStainSections(4))
@@ -706,6 +359,7 @@ export default function Record() {
         color_tags: colorTags,
         notes: memo.trim() || null,
         photo_urls: photoUrls,
+        price: price ? Number(price) : null,
       })
 
       setSaved(true)
@@ -818,7 +472,23 @@ export default function Record() {
           </div>
         </StepCard>
 
-        <StepCard step={3} title="약제 비율">
+        <StepCard step={3} title="가격">
+          <div className="relative">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={price ? Number(price).toLocaleString() : ''}
+              onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder="시술 금액"
+              className="w-full rounded-xl border border-border bg-[#FAF8F5] px-4 py-3 pr-10 text-sm text-text outline-none transition-colors placeholder:text-subtext/60 focus:border-primary focus:bg-background"
+            />
+            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-subtext">
+              원
+            </span>
+          </div>
+        </StepCard>
+
+        <StepCard step={4} title="약제 비율">
           <div className="space-y-3">
             {formulas.map((formula, index) => (
               <FormulaGroupCard
@@ -847,7 +517,7 @@ export default function Record() {
           </div>
         </StepCard>
 
-        <StepCard step={4} title="자연방치 시간">
+        <StepCard step={5} title="자연방치 시간">
           <div className="flex flex-wrap gap-2">
             {LEAVE_TIMES.map((minutes) => (
               <ChipButton
@@ -861,14 +531,14 @@ export default function Record() {
           </div>
         </StepCard>
 
-        <StepCard step={5} title="얼룩 구간">
+        <StepCard step={6} title="얼룩 구간">
           <HairStrandVisualizer
             sections={stainSections}
             onSectionsChange={setStainSections}
           />
         </StepCard>
 
-        <StepCard step={6} title="컬러 태그">
+        <StepCard step={7} title="컬러 태그">
           <div className="space-y-3">
             <div className="flex gap-2">
               <input
@@ -916,7 +586,7 @@ export default function Record() {
           </div>
         </StepCard>
 
-        <StepCard step={7} title="메모">
+        <StepCard step={8} title="메모">
           <textarea
             rows={4}
             value={memo}
@@ -926,7 +596,7 @@ export default function Record() {
           />
         </StepCard>
 
-        <StepCard step={8} title="사진 업로드">
+        <StepCard step={9} title="사진 업로드">
           <div className="space-y-3">
             <input
               ref={fileInputRef}
