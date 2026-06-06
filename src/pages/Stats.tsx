@@ -226,7 +226,6 @@ function IncentiveCalculator() {
   const feeAmount = Math.round((amt * feeRate) / 100)
   const netSales = amt - feeAmount
   const designerCut = Math.round((netSales * incRate) / 100)
-  const ownerCut = netSales - designerCut
 
   const won = (n: number) => `${n.toLocaleString('ko-KR')}원`
 
@@ -237,7 +236,6 @@ function IncentiveCalculator() {
       </h2>
 
       <div className="space-y-4 rounded-2xl border bg-white p-5" style={{ borderColor: BORDER }}>
-        {/* 시술 금액 */}
         <div>
           <label className="mb-1.5 block text-xs" style={{ color: '#7A7164' }}>시술 금액</label>
           <div className="relative">
@@ -253,7 +251,6 @@ function IncentiveCalculator() {
           </div>
         </div>
 
-        {/* 수수료율 / 인센티브율 */}
         <div className="flex gap-3">
           <div className="flex-1">
             <label className="mb-1.5 block text-xs" style={{ color: '#7A7164' }}>카드 수수료율</label>
@@ -283,7 +280,6 @@ function IncentiveCalculator() {
           </div>
         </div>
 
-        {/* 결과 */}
         <div className="space-y-2 border-t pt-4" style={{ borderColor: BORDER }}>
           <Row label="카드 수수료" value={`- ${won(feeAmount)}`} muted />
           <Row label="실매출 (수수료 뗀 금액)" value={won(netSales)} muted />
@@ -294,8 +290,6 @@ function IncentiveCalculator() {
               <span className="text-xl font-bold" style={{ color: ACCENT }}>{won(designerCut)}</span>
             </div>
           </div>
-
-          <Row label="원장 몫" value={won(ownerCut)} />
         </div>
 
         <p className="text-center text-xs" style={{ color: '#B5AD9E' }}>

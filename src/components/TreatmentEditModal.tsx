@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
-import { Camera, Plus, X } from 'lucide-react'
-import { getCurrentUser, updateTreatment, uploadPhoto } from '../lib/supabase'
-import { parseJsonArray, parseStringArray } from '../lib/clientUtils'
-import type { Formula, StainSection, Treatment } from '../types/client'
+import { Camera, ChevronDown, ChevronUp, Plus, X } from 'lucide-react'
+import { addTreatment, getCurrentUser, uploadPhoto } from '../lib/supabase'
+import type { Formula, StainSection } from '../types/client'
 import HairStrandVisualizer, {
   defaultStainSections,
 } from './HairStrandVisualizer'
@@ -48,14 +47,16 @@ function SectionTitle({ children }: { children: ReactNode }) {
 }
 
 interface Props {
-  treatment: Treatment | null
+  clientId: string
+  clientName: string
   open: boolean
   onClose: () => void
   onSaved: () => void
 }
 
-export default function TreatmentEditModal({
-  treatment,
+export default function TreatmentAddModal({
+  clientId,
+  clientName,
   open,
   onClose,
   onSaved,
@@ -67,31 +68,25 @@ export default function TreatmentEditModal({
   const [stainSections, setStainSections] = useState<StainSection[]>(() =>
     defaultStainSections(4),
   )
-  const [colorTagInput, setColorTagInput] = useState('')
-  const [colorTags, setColorTags] = useState<string[]>([])
   const [memo, setMemo] = useState('')
-  const [existingPhotos, setExistingPhotos] = useState<string[]>([])
   const [newPhotos, setNewPhotos] = useState<NewPhoto[]>([])
+  const [showDetails, setShowDetails] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (!open || !treatment) return
-    setMenus(parseStringArray(treatment.menu))
-    setPrice(treatment.price != null ? String(treatment.price) : '')
-    const f = parseJsonArray<Formula>(treatment.formulas)
-    setFormulas(f.length > 0 ? f : [emptyFormula()])
-    setLeaveTime(treatment.processing_time ?? null)
-    const s = parseJsonArray<StainSection>(treatment.stain_sections)
-    setStainSections(s.length > 0 ? s : defaultStainSections(4))
-    setColorTags(parseStringArray(treatment.color_tags))
-    setMemo(treatment.notes ?? '')
-    setExistingPhotos(parseStringArray(treatment.photo_urls))
+    if (!open) return
+    setMenus([])
+    setPrice('')
+    setFormulas([emptyFormula()])
+    setLeaveTime(null)
+    setStainSections(defaultStainSections(4))
+    setMemo('')
     setNewPhotos([])
-    setColorTagInput('')
+    setShowDetails(false)
     setError(null)
-  }, [open, treatment])
+  }, [open])
 
   useEffect(() => {
     return () => {
@@ -99,7 +94,7 @@ export default function TreatmentEditModal({
     }
   }, [newPhotos])
 
-  if (!open || !treatment) return null
+  if (!open) return null
 
   const toggleMenu = (menu: string) =>
     setMenus((prev) =>
@@ -108,13 +103,6 @@ export default function TreatmentEditModal({
 
   const updateFormula = (index: number, next: Formula) =>
     setFormulas((prev) => prev.map((f, i) => (i === index ? next : f)))
-
-  const addColorTag = () => {
-    const tag = colorTagInput.trim()
-    if (!tag || colorTags.includes(tag)) return
-    setColorTags((prev) => [...prev, tag])
-    setColorTagInput('')
-  }
 
   const handlePhotoSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -157,14 +145,16 @@ export default function TreatmentEditModal({
           f.developer.trim() ||
           f.ratio.trim(),
       )
-      await updateTreatment(treatment.id, {
+      const hasStain = stainSections.some((s) => s.level != null)
+      await addTreatment({
+        client_id: clientId,
         menu_items: menus,
         leave_time_minutes: leaveTime,
         formulas: filledFormulas,
-        stain_sections: stainSections,
-        color_tags: colorTags,
+        stain_sections: hasStain ? stainSections : [],
+        color_tags: [],
         notes: memo.trim() || null,
-        photo_urls: [...existingPhotos, ...uploaded],
+        photo_urls: uploaded,
         price: price ? Number(price) : null,
       })
       onSaved()
@@ -180,7 +170,10 @@ export default function TreatmentEditModal({
     <div className="fixed inset-0 z-50 flex justify-center bg-black/30">
       <div className="flex h-full w-full max-w-[390px] flex-col bg-background">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="text-lg font-semibold text-text">시술 기록 수정</h2>
+          <div>
+            <h2 className="text-lg font-semibold text-text">시술 기록 추가</h2>
+            <p className="text-xs text-subtext">{clientName}</p>
+          </div>
           <button onClick={onClose} className="text-sm text-subtext">
             닫기
           </button>
@@ -205,24 +198,6 @@ export default function TreatmentEditModal({
                   {menu}
                 </button>
               ))}
-            </div>
-          </div>
-
-          {/* 가격 */}
-          <div className="space-y-2">
-            <SectionTitle>가격</SectionTitle>
-            <div className="relative">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={price ? Number(price).toLocaleString() : ''}
-                onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ''))}
-                placeholder="시술 금액"
-                className="w-full rounded-xl border border-border bg-[#FAF8F5] px-4 py-3 pr-10 text-sm text-text outline-none focus:border-primary focus:bg-background"
-              />
-              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-subtext">
-                원
-              </span>
             </div>
           </div>
 
@@ -370,84 +345,24 @@ export default function TreatmentEditModal({
             </div>
           </div>
 
-          {/* 자연방치 시간 */}
+          {/* 가격 */}
           <div className="space-y-2">
-            <SectionTitle>자연방치 시간</SectionTitle>
-            <div className="flex flex-wrap gap-2">
-              {LEAVE_TIMES.map((minutes) => (
-                <button
-                  key={minutes}
-                  type="button"
-                  onClick={() => setLeaveTime(minutes)}
-                  className={`rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
-                    leaveTime === minutes
-                      ? 'bg-primary text-white'
-                      : 'border border-border bg-[#FAF8F5] text-subtext'
-                  }`}
-                >
-                  {minutes}분
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 얼룩 구간 */}
-          <div className="space-y-2">
-            <SectionTitle>얼룩 구간</SectionTitle>
-            <HairStrandVisualizer
-              sections={stainSections}
-              onSectionsChange={setStainSections}
-            />
-          </div>
-
-          {/* 컬러 태그 */}
-          <div className="space-y-2">
-            <SectionTitle>컬러 태그</SectionTitle>
-            <div className="flex gap-2">
+            <SectionTitle>
+              가격 <span className="text-xs font-normal text-subtext">(선택)</span>
+            </SectionTitle>
+            <div className="relative">
               <input
                 type="text"
-                value={colorTagInput}
-                onChange={(e) => setColorTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addColorTag()
-                  }
-                }}
-                placeholder="예: 백금발, 애쉬브라운"
-                className="min-w-0 flex-1 rounded-xl border border-border bg-[#FAF8F5] px-4 py-2.5 text-sm text-text outline-none placeholder:text-subtext/60 focus:border-primary focus:bg-background"
+                inputMode="numeric"
+                value={price ? Number(price).toLocaleString() : ''}
+                onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="시술 금액"
+                className="w-full rounded-xl border border-border bg-[#FAF8F5] px-4 py-3 pr-10 text-sm text-text outline-none focus:border-primary focus:bg-background"
               />
-              <button
-                type="button"
-                onClick={addColorTag}
-                disabled={!colorTagInput.trim()}
-                className="shrink-0 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text disabled:opacity-50"
-              >
-                추가
-              </button>
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-subtext">
+                원
+              </span>
             </div>
-            {colorTags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {colorTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center gap-1 rounded-full bg-[#FAF8F5] px-3 py-1.5 text-sm text-text"
-                  >
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setColorTags((prev) => prev.filter((t) => t !== tag))
-                      }
-                      className="rounded-full p-0.5 text-subtext active:bg-border/40"
-                      aria-label={`${tag} 삭제`}
-                    >
-                      <X size={14} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* 메모 */}
@@ -481,28 +396,8 @@ export default function TreatmentEditModal({
               <Camera size={20} className="text-primary" />
               사진 추가
             </button>
-            {(existingPhotos.length > 0 || newPhotos.length > 0) && (
+            {newPhotos.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
-                {existingPhotos.map((url) => (
-                  <div
-                    key={url}
-                    className="relative aspect-square overflow-hidden rounded-xl border border-border"
-                  >
-                    <img src={url} alt="" className="h-full w-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExistingPhotos((prev) =>
-                          prev.filter((u) => u !== url),
-                        )
-                      }
-                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white"
-                      aria-label="사진 삭제"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
                 {newPhotos.map((photo) => (
                   <div
                     key={photo.id}
@@ -526,6 +421,59 @@ export default function TreatmentEditModal({
               </div>
             )}
           </div>
+
+          {/* 세부 정보 (선택) */}
+          <div className="rounded-xl border border-border">
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-text"
+            >
+              <span>
+                세부 정보{' '}
+                <span className="text-xs font-normal text-subtext">
+                  (자연방치 시간 · 얼룩 구간)
+                </span>
+              </span>
+              {showDetails ? (
+                <ChevronUp size={18} className="text-subtext" />
+              ) : (
+                <ChevronDown size={18} className="text-subtext" />
+              )}
+            </button>
+            {showDetails && (
+              <div className="space-y-5 border-t border-border px-4 py-4">
+                <div className="space-y-2">
+                  <SectionTitle>자연방치 시간</SectionTitle>
+                  <div className="flex flex-wrap gap-2">
+                    {LEAVE_TIMES.map((minutes) => (
+                      <button
+                        key={minutes}
+                        type="button"
+                        onClick={() =>
+                          setLeaveTime(leaveTime === minutes ? null : minutes)
+                        }
+                        className={`rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
+                          leaveTime === minutes
+                            ? 'bg-primary text-white'
+                            : 'border border-border bg-[#FAF8F5] text-subtext'
+                        }`}
+                      >
+                        {minutes}분
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <SectionTitle>얼룩 구간</SectionTitle>
+                  <HairStrandVisualizer
+                    sections={stainSections}
+                    onSectionsChange={setStainSections}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="border-t border-border px-5 py-4">
@@ -544,7 +492,7 @@ export default function TreatmentEditModal({
               disabled={saving}
               className="flex-1 rounded-xl bg-primary py-3 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {saving ? '저장 중...' : '수정 완료'}
+              {saving ? '저장 중...' : '저장'}
             </button>
           </div>
         </div>

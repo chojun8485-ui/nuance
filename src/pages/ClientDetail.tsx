@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Copy, Pencil, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  Copy,
+  Images,
+  Instagram,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import {
   formatDateKo,
@@ -19,6 +27,8 @@ import type { Client, Formula, StainSection, Treatment } from '../types/client'
 import MessagePicker from '../components/MessagePicker'
 import MessageTemplatesPage from '../components/MessageTemplatesPage'
 import TreatmentEditModal from '../components/TreatmentEditModal'
+import TreatmentAddModal from '../components/TreatmentAddModal'
+import PhotoGallery from '../components/PhotoGallery'
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>()
@@ -28,6 +38,8 @@ export default function ClientDetail() {
   const [personalityNotes, setPersonalityNotes] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
   const [editingTreatment, setEditingTreatment] = useState<Treatment | null>(
     null,
   )
@@ -102,6 +114,9 @@ export default function ClientDetail() {
   }
 
   const retouchStatus = getRetouchStatus(client)
+  const hasPhotos = treatments.some(
+    (t) => parseStringArray(t.photo_urls).length > 0,
+  )
 
   return (
     <section className="space-y-6">
@@ -129,7 +144,26 @@ export default function ClientDetail() {
         <dl className="space-y-2.5 text-sm">
           <InfoRow label="이름" value={client.name} />
           <InfoRow label="전화번호" value={client.phone ?? '—'} />
-          <InfoRow label="인스타그램" value={client.instagram ?? '—'} />
+          <div className="flex justify-between gap-4">
+            <dt className="shrink-0 text-subtext">인스타그램</dt>
+            <dd className="truncate text-right">
+              {client.instagram ? (
+                
+                  href={`https://instagram.com/${client.instagram.replace(/^@/, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-primary"
+                >
+                  <Instagram size={14} />
+                  {client.instagram.startsWith('@')
+                    ? client.instagram
+                    : `@${client.instagram}`}
+                </a>
+              ) : (
+                <span className="text-text">—</span>
+              )}
+            </dd>
+          </div>
         </dl>
       </div>
 
@@ -160,7 +194,29 @@ export default function ClientDetail() {
       </button>
 
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-text">시술 기록</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-text">시술 기록</h2>
+          {hasPhotos && (
+            <button
+              type="button"
+              onClick={() => setGalleryOpen(true)}
+              className="flex items-center gap-1 text-xs font-medium text-primary"
+            >
+              <Images size={14} />
+              사진 모아보기
+            </button>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-primary/50 py-3 text-sm font-medium text-primary transition-colors active:bg-[#FAF8F5]"
+        >
+          <Plus size={16} />
+          시술 기록 추가
+        </button>
+
         {treatments.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border py-8 text-center text-sm text-subtext">
             아직 시술 기록이 없어요
@@ -196,6 +252,18 @@ export default function ClientDetail() {
         open={editingTreatment !== null}
         onClose={() => setEditingTreatment(null)}
         onSaved={loadClient}
+      />
+      <TreatmentAddModal
+        clientId={client.id}
+        clientName={client.name}
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onSaved={loadClient}
+      />
+      <PhotoGallery
+        treatments={treatments}
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
       />
     </section>
   )
@@ -256,7 +324,6 @@ function StainDiagram({
     const startFrac = acc / total
     acc += widths[i]
     const endFrac = acc / total
-    // 첫 구간은 왼쪽 끝까지 채워서 흰 여백 제거
     const x = i === 0 ? 0 : STRAND_LEFT + startFrac * STRAND_BODY_WIDTH
     const bodyEndX = STRAND_LEFT + endFrac * STRAND_BODY_WIDTH
     const isLast = i === n - 1
@@ -351,7 +418,6 @@ function TreatmentCard({
   const [deleting, setDeleting] = useState(false)
   const dateStr = treatment.treated_at ?? treatment.created_at
   const menuItems = parseStringArray(treatment.menu)
-  const colorTags = parseStringArray(treatment.color_tags)
   const photoUrls = parseStringArray(treatment.photo_urls)
   const stainSections = parseJsonArray<StainSection>(treatment.stain_sections)
   const formulas = parseJsonArray<Formula>(treatment.formulas)
@@ -401,19 +467,6 @@ function TreatmentCard({
         </div>
         <p className="shrink-0 text-xs text-subtext">{formatDateKo(dateStr)}</p>
       </div>
-
-      {colorTags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {colorTags.map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full bg-[#FAF8F5] px-2.5 py-0.5 text-xs text-text"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
 
       {formulas.length > 0 && (
         <ul className="space-y-2 text-sm">
